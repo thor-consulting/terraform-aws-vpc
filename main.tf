@@ -127,7 +127,7 @@ resource "aws_eip" "nat" {
   # Create these only if:
   # NAT instances are used and Elastic IPs are used with them,
   # or if the NAT gateway service is used (NAT instances are not used).
-  count = "signum((var.use_nat_instances * var.use_eip_with_nat_instances) + (var.use_nat_instances == 0 ? 1 : 0)) * length(var.private_subnets)"
+  count = signum((var.use_nat_instances * var.use_eip_with_nat_instances) + (var.use_nat_instances == 0 ? 1 : 0)) * length(var.private_subnets)
 
   vpc = true
 
@@ -136,7 +136,7 @@ resource "aws_eip" "nat" {
 
 resource "aws_security_group" "nat_instances" {
   # Create this only if using NAT instances, vs. the NAT gateway service.
-  count       = "0 + var.use_nat_instances"
+  count       = 0 + var.use_nat_instances
   name        = "nat"
   description = "Allow traffic from clients into NAT instances"
 
@@ -151,7 +151,7 @@ resource "aws_security_group" "nat_instances" {
     from_port   = 0
     to_port     = 65535
     protocol    = "tcp"
-    cidr_blocks = "var.private_subnets"
+    cidr_blocks = var.private_subnets
   }
 
   egress {
@@ -168,12 +168,12 @@ resource "aws_security_group" "nat_instances" {
 
 resource "aws_instance" "nat_instance" {
   # Create these only if using NAT instances, vs. the NAT gateway service.
-  count             = "(0 + var.use_nat_instances) * length(var.private_subnets)"
+  count             = (0 + var.use_nat_instances) * length(var.private_subnets)
   availability_zone = "element(var.availability_zones, count.index)"
 
-  key_name          = "var.nat_instance_ssh_key_name"
-  ami               = "data.aws_ami.nat_ami.id"
-  instance_type     = "var.nat_instance_type"
+  key_name          = var.nat_instance_ssh_key_name
+  ami               = data.aws_ami.nat_ami.id
+  instance_type     = var.nat_instance_type
   source_dest_check = false
 
   # associate_public_ip_address is not used,,
@@ -181,7 +181,7 @@ resource "aws_instance" "nat_instance" {
   # Also, using associate_public_ip_address causes issues with
   # stopped NAT instances which do not use an Elastic IP.
   # - For more details: https://github.com/terraform-providers/terraform-provider-aws/issues/343
-  subnet_id = "element(aws_subnet.public.*.id, count.index)"
+  subnet_id = element(aws_subnet.public.*.id, count.index)
 
   vpc_security_group_ids = ["aws_security_group.nat_instances.id"]
 
@@ -196,9 +196,9 @@ resource "aws_instance" "nat_instance" {
 
 resource "aws_eip_association" "nat_instance_eip" {
   # Create these only if using NAT instances, vs. the NAT gateway service.
-  count         = "(0 + (var.use_nat_instances * var.use_eip_with_nat_instances)) * length(var.private_subnets)"
-  instance_id   = "element(aws_instance.nat_instance.*.id, count.index)"
-  allocation_id = "element(aws_eip.nat.*.id, count.index)"
+  count         = (0 + (var.use_nat_instances * var.use_eip_with_nat_instances)) * length(var.private_subnets)
+  instance_id   = element(aws_instance.nat_instance.*.id, count.index)
+  allocation_id = element(aws_eip.nat.*.id, count.index)
 }
 
 /**
@@ -206,18 +206,18 @@ resource "aws_eip_association" "nat_instance_eip" {
  */
 
 resource "aws_subnet" "private" {
-  vpc_id            = "aws_vpc.main.id"
-  cidr_block        = "element(var.private_subnets, count.index)"
-  availability_zone = "element(var.availability_zones, count.index)"
+  vpc_id            = aws_vpc.main.id
+  cidr_block        = element(var.private_subnets, count.index)
+  availability_zone = element(var.availability_zones, count.index)
   count             = length(var.private_subnets)
 
   tags = merge(var.tags, var.private_subnet_tags, map("Name", format("%s-private-%03d", var.name, count.index+1), "Environment", "var.environment"))
 }
 
 resource "aws_subnet" "public" {
-  vpc_id                  = "aws_vpc.main.id"
-  cidr_block              = "element(var.public_subnets, count.index)"
-  availability_zone       = "element(var.availability_zones, count.index)"
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = element(var.public_subnets, count.index)
+  availability_zone       = element(var.availability_zones, count.index)
   count                   = length(var.public_subnets)
   map_public_ip_on_launch = true
 
@@ -235,9 +235,9 @@ resource "aws_route_table" "public" {
 }
 
 resource "aws_route" "public" {
-  route_table_id         = "aws_route_table.public.id"
+  route_table_id         = aws_route_table.public.id
   destination_cidr_block = "0.0.0.0/0"
-  gateway_id             = "aws_internet_gateway.main.id"
+  gateway_id             = aws_internet_gateway.main.id
 }
 
 resource "aws_route_table" "private" {
@@ -249,17 +249,17 @@ resource "aws_route_table" "private" {
 
 resource "aws_route" "private" {
   # Create this only if using the NAT gateway service, vs. NAT instances.
-  count                  = "(1 - var.use_nat_instances) * length(compact(var.private_subnets))"
-  route_table_id         = "element(aws_route_table.private.*.id, count.index)"
+  count                  = (1 - var.use_nat_instances) * length(compact(var.private_subnets))
+  route_table_id         = element(aws_route_table.private.*.id, count.index)
   destination_cidr_block = "0.0.0.0/0"
-  nat_gateway_id         = "element(aws_nat_gateway.main.*.id, count.index)"
+  nat_gateway_id         = element(aws_nat_gateway.main.*.id, count.index)
 }
 
 resource "aws_route" "private_nat_instance" {
-  count                  = "(0 + var.use_nat_instances) * length(compact(var.private_subnets))"
-  route_table_id         = "element(aws_route_table.private.*.id, count.index)"
+  count                  = (0 + var.use_nat_instances) * length(compact(var.private_subnets))
+  route_table_id         = element(aws_route_table.private.*.id, count.index)
   destination_cidr_block = "0.0.0.0/0"
-  instance_id            = "element(aws_instance.nat_instance.*.id, count.index)"
+  instance_id            = element(aws_instance.nat_instance.*.id, count.index)
 }
 
 /**
@@ -268,14 +268,14 @@ resource "aws_route" "private_nat_instance" {
 
 resource "aws_route_table_association" "private" {
   count          = length(var.private_subnets)
-  subnet_id      = "element(aws_subnet.private.*.id, count.index)"
-  route_table_id = "element(aws_route_table.private.*.id, count.index)"
+  subnet_id      = element(aws_subnet.private.*.id, count.index)
+  route_table_id = element(aws_route_table.private.*.id, count.index)
 }
 
 resource "aws_route_table_association" "public" {
   count          = length(var.public_subnets)
-  subnet_id      = "element(aws_subnet.public.*.id, count.index)"
-  route_table_id = "aws_route_table.public.id"
+  subnet_id      = element(aws_subnet.public.*.id, count.index)
+  route_table_id = aws_route_table.public.id
 }
 
 /**
@@ -295,12 +295,12 @@ resource "aws_db_subnet_group" "default" {
 
 // The VPC ID
 output "id" {
-  value = "aws_vpc.main.id"
+  value = aws_vpc.main.id
 }
 
 // The VPC CIDR
 output "cidr_block" {
-  value = "aws_vpc.main.cidr_block"
+  value = aws_vpc.main.cidr_block
 }
 
 // A comma-separated list of subnet IDs.
