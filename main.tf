@@ -4,12 +4,12 @@ variable "cidr" {
 
 variable "public_subnets" {
   description = "List of public subnets"
-  type        = "list"
+  type        = list
 }
 
 variable "private_subnets" {
   description = "List of private subnets"
-  type        = "list"
+  type        = list
 }
 
 variable "environment" {
@@ -18,7 +18,7 @@ variable "environment" {
 
 variable "availability_zones" {
   description = "List of availability zones"
-  type        = "list"
+  type        = list
 }
 
 variable "name" {
@@ -96,11 +96,11 @@ variable "nat_instance_ssh_key_name" {
  */
 
 resource "aws_vpc" "main" {
-  cidr_block           = "${var.cidr}"
+  cidr_block           = "var.cidr"
   enable_dns_support   = true
   enable_dns_hostnames = true
 
-  tags = "${merge(var.tags, var.vpc_tags, map("Name", format("%s", var.name), "Environment", "${var.environment}"))}"
+  tags = merge(var.tags, var.vpc_tags, map("Name", format("%s", var.name), "Environment", "var.environment"))
 }
 
 /**
@@ -108,35 +108,35 @@ resource "aws_vpc" "main" {
  */
 
 resource "aws_internet_gateway" "main" {
-  vpc_id = "${aws_vpc.main.id}"
+  vpc_id = "aws_vpc.main.id"
 
-  tags = "${merge(var.tags, map("Name", format("%s", var.name), "Environment", "${var.environment}"))}"
+  tags = merge(var.tags, map("Name", format("%s", var.name), "Environment", "var.environment"))
 }
 
 resource "aws_nat_gateway" "main" {
   # Only create this if not using NAT instances.
-  count         = "${(1 - var.use_nat_instances) * length(var.private_subnets)}"
-  allocation_id = "${element(aws_eip.nat.*.id, count.index)}"
-  subnet_id     = "${element(aws_subnet.public.*.id, count.index)}"
-  depends_on    = ["aws_internet_gateway.main"]
+  count         = "(1 - var.use_nat_instances) * length(var.private_subnets)"
+  allocation_id = "element(aws_eip.nat.*.id, count.index)"
+  subnet_id     = "element(aws_subnet.public.*.id, count.index)"
+  depends_on    = [aws_internet_gateway.main]
 
-  tags = "${merge(var.tags, map("Name", format("%s", var.name), "Environment", "${var.environment}"))}"
+  tags = merge(var.tags, map("Name", format("%s", var.name), "Environment", "var.environment"))
 }
 
 resource "aws_eip" "nat" {
   # Create these only if:
   # NAT instances are used and Elastic IPs are used with them,
   # or if the NAT gateway service is used (NAT instances are not used).
-  count = "${signum((var.use_nat_instances * var.use_eip_with_nat_instances) + (var.use_nat_instances == 0 ? 1 : 0)) * length(var.private_subnets)}"
+  count = "signum((var.use_nat_instances * var.use_eip_with_nat_instances) + (var.use_nat_instances == 0 ? 1 : 0)) * length(var.private_subnets)"
 
   vpc = true
 
-  tags = "${merge(var.tags, map("Name", format("%s-%03d", var.name, element(var.availability_zones, count.index)), "Environment", "${var.environment}"))}"
+  tags = merge(var.tags, map("Name", format("%s-%03d", var.name, element(var.availability_zones, count.index)), "Environment", "var.environment"))
 }
 
 resource "aws_security_group" "nat_instances" {
   # Create this only if using NAT instances, vs. the NAT gateway service.
-  count       = "${0 + var.use_nat_instances}"
+  count       = "0 + var.use_nat_instances"
   name        = "nat"
   description = "Allow traffic from clients into NAT instances"
 
@@ -144,14 +144,14 @@ resource "aws_security_group" "nat_instances" {
     from_port   = 0
     to_port     = 65535
     protocol    = "udp"
-    cidr_blocks = "${var.private_subnets}"
+    cidr_blocks = "var.private_subnets"
   }
 
   ingress {
     from_port   = 0
     to_port     = 65535
     protocol    = "tcp"
-    cidr_blocks = "${var.private_subnets}"
+    cidr_blocks = "var.private_subnets"
   }
 
   egress {
@@ -161,19 +161,19 @@ resource "aws_security_group" "nat_instances" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  vpc_id = "${aws_vpc.main.id}"
+  vpc_id = "aws_vpc.main.id"
 
-  tags = "${merge(var.tags, map("Name", format("%s-nat-instance", var.name), "Environment", "${var.environment}"))}"
+  tags = merge(var.tags, map("Name", format("%s-nat-instance", var.name), "Environment", "var.environment"))
 }
 
 resource "aws_instance" "nat_instance" {
   # Create these only if using NAT instances, vs. the NAT gateway service.
-  count             = "${(0 + var.use_nat_instances) * length(var.private_subnets)}"
-  availability_zone = "${element(var.availability_zones, count.index)}"
+  count             = "(0 + var.use_nat_instances) * length(var.private_subnets)"
+  availability_zone = "element(var.availability_zones, count.index)"
 
-  key_name          = "${var.nat_instance_ssh_key_name}"
-  ami               = "${data.aws_ami.nat_ami.id}"
-  instance_type     = "${var.nat_instance_type}"
+  key_name          = "var.nat_instance_ssh_key_name"
+  ami               = "data.aws_ami.nat_ami.id"
+  instance_type     = "var.nat_instance_type"
   source_dest_check = false
 
   # associate_public_ip_address is not used,,
@@ -181,24 +181,24 @@ resource "aws_instance" "nat_instance" {
   # Also, using associate_public_ip_address causes issues with
   # stopped NAT instances which do not use an Elastic IP.
   # - For more details: https://github.com/terraform-providers/terraform-provider-aws/issues/343
-  subnet_id = "${element(aws_subnet.public.*.id, count.index)}"
+  subnet_id = "element(aws_subnet.public.*.id, count.index)"
 
-  vpc_security_group_ids = ["${aws_security_group.nat_instances.id}"]
+  vpc_security_group_ids = ["aws_security_group.nat_instances.id"]
 
   lifecycle {
     # Ignore changes to the NAT AMI data source.
-    ignore_changes = ["ami"]
+    ignore_changes = [ami]
   }
 
-  tags        = "${merge(var.tags, map("Name", "${var.name}-${format("private-%03d NAT", count.index+1)}", "Environment", var.environment))}"
-  volume_tags = "${merge(var.tags, map("Name", "${var.name}-${format("private-%03d NAT", count.index+1)}", "Environment", var.environment))}"
+  # tags        = "merge(var.tags, map("Name", "var.name-format("private-%03d NAT", count.index+1)", "Environment", var.environment))"
+  # volume_tags = "merge(var.tags, map("Name", "var.name-format("private-%03d NAT", count.index+1)", "Environment", var.environment))"
 }
 
 resource "aws_eip_association" "nat_instance_eip" {
   # Create these only if using NAT instances, vs. the NAT gateway service.
-  count         = "${(0 + (var.use_nat_instances * var.use_eip_with_nat_instances)) * length(var.private_subnets)}"
-  instance_id   = "${element(aws_instance.nat_instance.*.id, count.index)}"
-  allocation_id = "${element(aws_eip.nat.*.id, count.index)}"
+  count         = "(0 + (var.use_nat_instances * var.use_eip_with_nat_instances)) * length(var.private_subnets)"
+  instance_id   = "element(aws_instance.nat_instance.*.id, count.index)"
+  allocation_id = "element(aws_eip.nat.*.id, count.index)"
 }
 
 /**
@@ -206,22 +206,22 @@ resource "aws_eip_association" "nat_instance_eip" {
  */
 
 resource "aws_subnet" "private" {
-  vpc_id            = "${aws_vpc.main.id}"
-  cidr_block        = "${element(var.private_subnets, count.index)}"
-  availability_zone = "${element(var.availability_zones, count.index)}"
-  count             = "${length(var.private_subnets)}"
+  vpc_id            = "aws_vpc.main.id"
+  cidr_block        = "element(var.private_subnets, count.index)"
+  availability_zone = "element(var.availability_zones, count.index)"
+  count             = "length(var.private_subnets)"
 
-  tags = "${merge(var.tags, var.private_subnet_tags, map("Name", format("%s-private-%03d", var.name, count.index+1), "Environment", "${var.environment}"))}"
+  tags = merge(var.tags, var.private_subnet_tags, map("Name", format("%s-private-%03d", var.name, count.index+1), "Environment", "var.environment"))
 }
 
 resource "aws_subnet" "public" {
-  vpc_id                  = "${aws_vpc.main.id}"
-  cidr_block              = "${element(var.public_subnets, count.index)}"
-  availability_zone       = "${element(var.availability_zones, count.index)}"
-  count                   = "${length(var.public_subnets)}"
+  vpc_id                  = "aws_vpc.main.id"
+  cidr_block              = "element(var.public_subnets, count.index)"
+  availability_zone       = "element(var.availability_zones, count.index)"
+  count                   = "length(var.public_subnets)"
   map_public_ip_on_launch = true
 
-  tags = "${merge(var.tags, var.public_subnet_tags, map("Name", format("%s-public-%03d", var.name, count.index+1), "Environment", "${var.environment}"))}"
+  tags = merge(var.tags, var.public_subnet_tags, map("Name", format("%s-public-%03d", var.name, count.index+1), "Environment", "var.environment"))
 }
 
 /**
@@ -229,37 +229,37 @@ resource "aws_subnet" "public" {
  */
 
 resource "aws_route_table" "public" {
-  vpc_id = "${aws_vpc.main.id}"
+  vpc_id = "aws_vpc.main.id"
 
-  tags = "${merge(var.tags, var.public_route_table_tags, map("Name", format("%s-public-001", var.name), "Environment", var.environment))}"
+  tags = merge(var.tags, var.public_route_table_tags, map("Name", format("%s-public-001", var.name), "Environment", var.environment))
 }
 
 resource "aws_route" "public" {
-  route_table_id         = "${aws_route_table.public.id}"
+  route_table_id         = "aws_route_table.public.id"
   destination_cidr_block = "0.0.0.0/0"
-  gateway_id             = "${aws_internet_gateway.main.id}"
+  gateway_id             = "aws_internet_gateway.main.id"
 }
 
 resource "aws_route_table" "private" {
-  count  = "${length(var.private_subnets)}"
-  vpc_id = "${aws_vpc.main.id}"
+  count  = "length(var.private_subnets)"
+  vpc_id = "aws_vpc.main.id"
 
-  tags = "${merge(var.tags, var.public_route_table_tags, map("Name", format("%s-private-%03d", var.name, count.index+1), "Environment", var.environment))}"
+  tags = merge(var.tags, var.public_route_table_tags, map("Name", format("%s-private-%03d", var.name, count.index+1), "Environment", var.environment))
 }
 
 resource "aws_route" "private" {
   # Create this only if using the NAT gateway service, vs. NAT instances.
-  count                  = "${(1 - var.use_nat_instances) * length(compact(var.private_subnets))}"
-  route_table_id         = "${element(aws_route_table.private.*.id, count.index)}"
+  count                  = "(1 - var.use_nat_instances) * length(compact(var.private_subnets))"
+  route_table_id         = "element(aws_route_table.private.*.id, count.index)"
   destination_cidr_block = "0.0.0.0/0"
-  nat_gateway_id         = "${element(aws_nat_gateway.main.*.id, count.index)}"
+  nat_gateway_id         = "element(aws_nat_gateway.main.*.id, count.index)"
 }
 
 resource "aws_route" "private_nat_instance" {
-  count                  = "${(0 + var.use_nat_instances) * length(compact(var.private_subnets))}"
-  route_table_id         = "${element(aws_route_table.private.*.id, count.index)}"
+  count                  = "(0 + var.use_nat_instances) * length(compact(var.private_subnets))"
+  route_table_id         = "element(aws_route_table.private.*.id, count.index)"
   destination_cidr_block = "0.0.0.0/0"
-  instance_id            = "${element(aws_instance.nat_instance.*.id, count.index)}"
+  instance_id            = "element(aws_instance.nat_instance.*.id, count.index)"
 }
 
 /**
@@ -267,15 +267,15 @@ resource "aws_route" "private_nat_instance" {
  */
 
 resource "aws_route_table_association" "private" {
-  count          = "${length(var.private_subnets)}"
-  subnet_id      = "${element(aws_subnet.private.*.id, count.index)}"
-  route_table_id = "${element(aws_route_table.private.*.id, count.index)}"
+  count          = "length(var.private_subnets)"
+  subnet_id      = "element(aws_subnet.private.*.id, count.index)"
+  route_table_id = "element(aws_route_table.private.*.id, count.index)"
 }
 
 resource "aws_route_table_association" "public" {
-  count          = "${length(var.public_subnets)}"
-  subnet_id      = "${element(aws_subnet.public.*.id, count.index)}"
-  route_table_id = "${aws_route_table.public.id}"
+  count          = "length(var.public_subnets)"
+  subnet_id      = "element(aws_subnet.public.*.id, count.index)"
+  route_table_id = "aws_route_table.public.id"
 }
 
 /**
@@ -283,10 +283,10 @@ resource "aws_route_table_association" "public" {
  */
 
 resource "aws_db_subnet_group" "default" {
-  description = "Default database subnet group for ${aws_vpc.main.id}"
-  subnet_ids  = ["${aws_subnet.private.*.id}"]
+  description = "Default database subnet group for aws_vpc.main.id"
+  subnet_ids  = ["aws_subnet.private.*.id"]
 
-  tags = "${merge(var.tags, map("Name", format("%s-default-db-subnet-group", var.name)))}"
+  tags = merge(var.tags, map("Name", format("%s-default-db-subnet-group", var.name)))
 }
 
 /**
@@ -295,49 +295,49 @@ resource "aws_db_subnet_group" "default" {
 
 // The VPC ID
 output "id" {
-  value = "${aws_vpc.main.id}"
+  value = "aws_vpc.main.id"
 }
 
 // The VPC CIDR
 output "cidr_block" {
-  value = "${aws_vpc.main.cidr_block}"
+  value = "aws_vpc.main.cidr_block"
 }
 
 // A comma-separated list of subnet IDs.
 output "public_subnets" {
-  value = ["${aws_subnet.public.*.id}"]
+  value = ["aws_subnet.public.*.id"]
 }
 
 // A list of subnet IDs.
 output "private_subnets" {
-  value = ["${aws_subnet.private.*.id}"]
+  value = ["aws_subnet.private.*.id"]
 }
 
 // The default VPC security group ID.
 output "security_group" {
-  value = "${aws_vpc.main.default_security_group_id}"
+  value = "aws_vpc.main.default_security_group_id"
 }
 
 // The list of availability zones of the VPC.
 output "availability_zones" {
-  value = ["${aws_subnet.public.*.availability_zone}"]
+  value = ["aws_subnet.public.*.availability_zone"]
 }
 
 // The private route table ID.
 output "private_rtb_id" {
-  value = "${join(",", aws_route_table.private.*.id)}"
+  value = join(",", aws_route_table.private.*.id)
 }
 
 // The public route table ID.
 output "public_rtb_id" {
-  value = "${aws_route_table.public.id}"
+  value = "aws_route_table.public.id"
 }
 
 // The list of EIPs associated with the private subnets.
 output "private_nat_ips" {
-  value = ["${aws_eip.nat.*.public_ip}"]
+  value = ["aws_eip.nat.*.public_ip"]
 }
 
 output "default_db_subnet_group" {
-  value = "${aws_db_subnet_group.default.id}"
+  value = "aws_db_subnet_group.default.id"
 }
