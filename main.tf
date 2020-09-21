@@ -74,6 +74,7 @@ variable "private_route_table_tags" {
 # This data source returns the newest Amazon NAT instance AMI
 data "aws_ami" "nat_ami" {
   most_recent = true
+  owners      = ["self"]
 
   filter {
     name   = "owner-alias"
@@ -96,7 +97,7 @@ variable "nat_instance_ssh_key_name" {
  */
 
 resource "aws_vpc" "main" {
-  cidr_block           = "var.cidr"
+  cidr_block           = var.cidr
   enable_dns_support   = true
   enable_dns_hostnames = true
 
