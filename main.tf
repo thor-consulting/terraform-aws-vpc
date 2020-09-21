@@ -145,7 +145,7 @@ resource "aws_security_group" "nat_instances" {
     from_port   = 0
     to_port     = 65535
     protocol    = "udp"
-    cidr_blocks = "var.private_subnets"
+    cidr_blocks = var.private_subnets
   }
 
   ingress {
